@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "95564149346",
+    "project_id": "swa-asset-management",
+    "storage_bucket": "swa-asset-management.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:95564149346:android:8c02ca2bd43e963089973b",
+        "android_client_info": {
+          "package_name": "com.example.swa_asset_management"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAmjiSBCEYsI0PsnY30kQihBNRAYc6ok6E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

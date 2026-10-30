@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme.dart';
 import '../models/asset.dart';
-import '../services/asset_service.dart';
+import '../services/firebase_service.dart';
 
 class AssetFormScreen extends StatefulWidget {
   const AssetFormScreen({super.key});
@@ -14,9 +14,8 @@ class AssetFormScreen extends StatefulWidget {
 
 class _AssetFormScreenState extends State<AssetFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  final AssetService _assetService = AssetService();
+  final _firebaseService = FirebaseService();
 
-  // Controllers
   final _codeController = TextEditingController();
   final _nameController = TextEditingController();
   final _categoryController = TextEditingController();
@@ -35,8 +34,16 @@ class _AssetFormScreenState extends State<AssetFormScreen> {
   @override
   void initState() {
     super.initState();
-    _assetService.initializeDemoData();
-    _codeController.text = _assetService.generateNextCode();
+    _generateCode();
+  }
+
+  Future<void> _generateCode() async {
+    try {
+      final code = await _firebaseService.generateNextCode();
+      setState(() => _codeController.text = code);
+    } catch (e) {
+      _codeController.text = 'AST-001';
+    }
   }
 
   @override
@@ -61,81 +68,59 @@ class _AssetFormScreenState extends State<AssetFormScreen> {
       initialDate: _acquisitionDate ?? DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime(2030),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: SWATheme.primaryNavy,
-              onPrimary: SWATheme.surface,
-              surface: SWATheme.surface,
-              onSurface: SWATheme.primaryText,
-            ),
-          ),
-          child: child!,
-        );
-      },
     );
     if (picked != null) {
-      setState(() {
-        _acquisitionDate = picked;
-      });
+      setState(() => _acquisitionDate = picked);
     }
   }
 
   Future<void> _saveAsset() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     if (_acquisitionDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tanggal perolehan wajib diisi'),
-          backgroundColor: SWATheme.dangerRed,
-        ),
+        const SnackBar(content: Text('Tanggal perolehan wajib diisi'), backgroundColor: SWATheme.dangerRed),
       );
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    final asset = Asset(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      code: _codeController.text,
-      name: _nameController.text,
-      category: _categoryController.text,
-      brand: _brandController.text,
-      model: _modelController.text,
-      serialNumber: _serialNumberController.text,
-      acquisitionDate: _acquisitionDate!,
-      acquisitionPrice: double.parse(_priceController.text),
-      vendor: _vendorController.text,
-      location: _locationController.text,
-      department: _departmentController.text,
-      responsiblePerson: _responsibleController.text,
-      status: 'Aktif',
-      condition: 'Baik',
-    );
-
-    _assetService.addAsset(asset);
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Aset berhasil ditambahkan'),
-          backgroundColor: SWATheme.successGreen,
-        ),
+    try {
+      final asset = Asset(
+        id: '',
+        code: _codeController.text,
+        name: _nameController.text,
+        category: _categoryController.text,
+        brand: _brandController.text,
+        model: _modelController.text,
+        serialNumber: _serialNumberController.text,
+        acquisitionDate: _acquisitionDate!,
+        acquisitionPrice: double.parse(_priceController.text),
+        vendor: _vendorController.text,
+        location: _locationController.text,
+        department: _departmentController.text,
+        responsiblePerson: _responsibleController.text,
+        status: 'Aktif',
+        condition: 'Baik',
       );
 
-      Navigator.pop(context, true);
+      await _firebaseService.addAsset(asset);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Aset berhasil disimpan'), backgroundColor: SWATheme.successGreen),
+        );
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal menyimpan: $e'), backgroundColor: SWATheme.dangerRed),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -143,9 +128,7 @@ class _AssetFormScreenState extends State<AssetFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: SWATheme.background,
-      appBar: AppBar(
-        title: const Text('Tambah Aset'),
-      ),
+      appBar: AppBar(title: const Text('Tambah Aset')),
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
@@ -153,59 +136,28 @@ class _AssetFormScreenState extends State<AssetFormScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Bagian A: Informasi Aset
               _buildSectionHeader('A. Informasi Aset'),
               const SizedBox(height: 16),
-              _buildTextField(
-                controller: _codeController,
-                label: 'Kode Aset',
-                hint: 'Kode aset akan dibuat otomatis',
-                readOnly: true,
-              ),
+              _buildTextField(controller: _codeController, label: 'Kode Aset', hint: 'Kode otomatis', readOnly: true),
               const SizedBox(height: 12),
-              _buildTextField(
-                controller: _nameController,
-                label: 'Nama Aset',
-                hint: 'Masukkan nama aset',
-                required: true,
-              ),
+              _buildTextField(controller: _nameController, label: 'Nama Aset', hint: 'Masukkan nama aset', required: true),
               const SizedBox(height: 12),
-              _buildTextField(
-                controller: _categoryController,
-                label: 'Kategori',
-                hint: 'Contoh: Elektronik, Furnitur',
-                required: true,
-              ),
+              _buildTextField(controller: _categoryController, label: 'Kategori', hint: 'Contoh: Elektronik, Furnitur', required: true),
               const SizedBox(height: 12),
-              _buildTextField(
-                controller: _brandController,
-                label: 'Merek',
-                hint: 'Masukkan merek aset',
-              ),
+              _buildTextField(controller: _brandController, label: 'Merek', hint: 'Masukkan merek aset'),
               const SizedBox(height: 12),
-              _buildTextField(
-                controller: _modelController,
-                label: 'Model',
-                hint: 'Masukkan model aset',
-              ),
+              _buildTextField(controller: _modelController, label: 'Model', hint: 'Masukkan model aset'),
               const SizedBox(height: 12),
-              _buildTextField(
-                controller: _serialNumberController,
-                label: 'Nomor Seri',
-                hint: 'Masukkan nomor seri',
-              ),
-
+              _buildTextField(controller: _serialNumberController, label: 'Nomor Seri', hint: 'Masukkan nomor seri'),
               const SizedBox(height: 24),
-
-              // Bagian B: Pengadaan dan Finansial
               _buildSectionHeader('B. Pengadaan dan Finansial'),
               const SizedBox(height: 16),
               InkWell(
                 onTap: () => _selectDate(context),
                 child: InputDecorator(
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: 'Tanggal Perolehan',
-                    suffixIcon: const Icon(Icons.calendar_today),
+                    suffixIcon: Icon(Icons.calendar_today),
                   ),
                   child: Text(
                     _acquisitionDate == null
@@ -223,60 +175,28 @@ class _AssetFormScreenState extends State<AssetFormScreen> {
                 keyboardType: TextInputType.number,
                 required: true,
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Harga wajib diisi';
-                  }
-                  if (double.tryParse(value) == null) {
-                    return 'Harga harus berupa angka';
-                  }
+                  if (value == null || value.isEmpty) return 'Harga wajib diisi';
+                  if (double.tryParse(value) == null) return 'Harga harus berupa angka';
                   return null;
                 },
               ),
               const SizedBox(height: 12),
-              _buildTextField(
-                controller: _vendorController,
-                label: 'Vendor/Pemasok',
-                hint: 'Masukkan nama vendor',
-                required: true,
-              ),
-
+              _buildTextField(controller: _vendorController, label: 'Vendor/Pemasok', hint: 'Masukkan nama vendor', required: true),
               const SizedBox(height: 24),
-
-              // Bagian C: Penempatan dan PIC
               _buildSectionHeader('C. Penempatan dan PIC'),
               const SizedBox(height: 16),
-              _buildTextField(
-                controller: _locationController,
-                label: 'Lokasi Fisik',
-                hint: 'Masukkan lokasi aset',
-                required: true,
-              ),
+              _buildTextField(controller: _locationController, label: 'Lokasi Fisik', hint: 'Masukkan lokasi aset', required: true),
               const SizedBox(height: 12),
-              _buildTextField(
-                controller: _departmentController,
-                label: 'Departemen',
-                hint: 'Masukkan nama departemen',
-                required: true,
-              ),
+              _buildTextField(controller: _departmentController, label: 'Departemen', hint: 'Masukkan nama departemen', required: true),
               const SizedBox(height: 12),
-              _buildTextField(
-                controller: _responsibleController,
-                label: 'Penanggung Jawab',
-                hint: 'Masukkan nama penanggung jawab',
-                required: true,
-              ),
-
+              _buildTextField(controller: _responsibleController, label: 'Penanggung Jawab', hint: 'Masukkan nama PIC', required: true),
               const SizedBox(height: 32),
-
-              // Tombol Aksi
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton(
                       onPressed: _isLoading ? null : () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
+                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
                       child: const Text('Batal'),
                     ),
                   ),
@@ -284,26 +204,18 @@ class _AssetFormScreenState extends State<AssetFormScreen> {
                   Expanded(
                     child: ElevatedButton(
                       onPressed: _isLoading ? null : _saveAsset,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
+                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
                       child: _isLoading
                           ? const SizedBox(
                               height: 20,
                               width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  SWATheme.surface,
-                                ),
-                              ),
+                              child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(SWATheme.surface)),
                             )
                           : const Text('Simpan'),
                     ),
                   ),
                 ],
               ),
-
               const SizedBox(height: 16),
             ],
           ),
@@ -313,12 +225,7 @@ class _AssetFormScreenState extends State<AssetFormScreen> {
   }
 
   Widget _buildSectionHeader(String title) {
-    return Text(
-      title,
-      style: SWATheme.headingSmall.copyWith(
-        color: SWATheme.primaryNavy,
-      ),
-    );
+    return Text(title, style: SWATheme.headingSmall.copyWith(color: SWATheme.primaryNavy));
   }
 
   Widget _buildTextField({
@@ -338,12 +245,11 @@ class _AssetFormScreenState extends State<AssetFormScreen> {
         labelText: required ? '$label *' : label,
         hintText: hint,
       ),
-      validator: validator ?? (value) {
-        if (required && (value == null || value.isEmpty)) {
-          return '$label wajib diisi';
-        }
-        return null;
-      },
+      validator: validator ??
+          (value) {
+            if (required && (value == null || value.isEmpty)) return '$label wajib diisi';
+            return null;
+          },
     );
   }
 }

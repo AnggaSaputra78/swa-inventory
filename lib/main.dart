@@ -1,9 +1,27 @@
-// lib/main.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // <-- TAMBAHKAN INI
 import 'theme.dart';
-import 'screens/login_screen.dart';
+import 'services/firebase_service.dart';
+import 'services/connectivity_service.dart';
+import 'screens/splash_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
+  // Firebase hanya diinisialisasi di platform native (Android/iOS).
+  // Web memerlukan konfigurasi script tambahan di web/index.html.
+  if (!kIsWeb) {
+    await FirebaseService().initialize();
+  }
+
+  await ConnectivityService().initialize();
+
   runApp(const SWAAssetManagementApp());
 }
 
@@ -16,7 +34,7 @@ class SWAAssetManagementApp extends StatelessWidget {
       title: 'SWA Asset Management',
       debugShowCheckedModeBanner: false,
       theme: SWATheme.lightTheme,
-      home: const LoginScreen(),
+      home: const SplashScreen(),
     );
   }
 }

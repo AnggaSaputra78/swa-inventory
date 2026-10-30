@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../models/asset.dart';
-import '../services/asset_service.dart';
+import '../services/firebase_service.dart';
 import 'asset_form_screen.dart';
 import 'asset_detail_screen.dart';
 
@@ -14,7 +14,10 @@ class AssetListScreen extends StatefulWidget {
 }
 
 class _AssetListScreenState extends State<AssetListScreen> {
-  final AssetService _assetService = AssetService();
+  final _firebaseService = FirebaseService();
+  List<Asset> _assets = [];
+  List<Asset> _filteredAssets = [];
+  bool _isLoading = true;
   String _searchQuery = '';
   String _selectedCategory = 'Semua';
   final List<String> _categories = ['Semua', 'Elektronik', 'Furnitur', 'Kendaraan', 'Alat Tulis'];
@@ -22,14 +25,36 @@ class _AssetListScreenState extends State<AssetListScreen> {
   @override
   void initState() {
     super.initState();
-    _assetService.initializeDemoData();
+    _loadAssets();
   }
 
-  List<Asset> _getFilteredAssets() {
-    var assets = _assetService.getAllAssets();
+  Future<void> _loadAssets() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final assets = await _firebaseService.getAssets();
+      setState(() {
+        _assets = assets;
+        _applyFilters();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memuat data: $e'), backgroundColor: SWATheme.dangerRed),
+        );
+      }
+    }
+  }
+
+  void _applyFilters() {
+    var filtered = List<Asset>.from(_assets);
 
     if (_searchQuery.isNotEmpty) {
-      assets = assets.where((asset) {
+      filtered = filtered.where((asset) {
         return asset.code.toLowerCase().contains(_searchQuery.toLowerCase()) ||
             asset.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
             asset.category.toLowerCase().contains(_searchQuery.toLowerCase());
@@ -37,37 +62,27 @@ class _AssetListScreenState extends State<AssetListScreen> {
     }
 
     if (_selectedCategory != 'Semua') {
-      assets = assets.where((asset) => asset.category == _selectedCategory).toList();
+      filtered = filtered.where((asset) => asset.category == _selectedCategory).toList();
     }
 
-    return assets;
+    setState(() => _filteredAssets = filtered);
   }
 
   @override
   Widget build(BuildContext context) {
-    final filteredAssets = _getFilteredAssets();
-
     return Scaffold(
       backgroundColor: SWATheme.background,
       appBar: AppBar(
         title: const Text('Daftar Aset'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AssetFormScreen()),
-              ).then((_) {
-                setState(() {});
-              });
-            },
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadAssets,
           ),
         ],
       ),
       body: Column(
         children: [
-          // Search dan Filter
           Container(
             padding: const EdgeInsets.all(16),
             color: SWATheme.surface,
@@ -81,6 +96,7 @@ class _AssetListScreenState extends State<AssetListScreen> {
                   onChanged: (value) {
                     setState(() {
                       _searchQuery = value;
+                      _applyFilters();
                     });
                   },
                 ),
@@ -98,9 +114,10 @@ class _AssetListScreenState extends State<AssetListScreen> {
                         child: FilterChip(
                           label: Text(category),
                           selected: isSelected,
-                          onSelected: (selected) {
+                          onSelected: (_) {
                             setState(() {
                               _selectedCategory = category;
+                              _applyFilters();
                             });
                           },
                           selectedColor: SWATheme.primaryNavy,
@@ -116,58 +133,39 @@ class _AssetListScreenState extends State<AssetListScreen> {
               ],
             ),
           ),
-
-          // Info Jumlah Aset
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             child: Text(
-              'Menampilkan ${filteredAssets.length} aset',
+              'Menampilkan ${_filteredAssets.length} dari ${_assets.length} aset',
               style: SWATheme.bodySmall,
             ),
           ),
-
-          // Daftar Aset
           Expanded(
-            child: filteredAssets.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.inventory_2_outlined,
-                          size: 64,
-                          color: SWATheme.secondaryText,
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _filteredAssets.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.inventory_2_outlined, size: 64, color: SWATheme.secondaryText),
+                            const SizedBox(height: 16),
+                            Text('Tidak ada aset ditemukan', style: SWATheme.bodyMedium.copyWith(color: SWATheme.secondaryText)),
+                          ],
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Tidak ada aset ditemukan',
-                          style: SWATheme.bodyMedium.copyWith(
-                            color: SWATheme.secondaryText,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: filteredAssets.length,
-                    itemBuilder: (context, index) {
-                      final asset = filteredAssets[index];
-                      return _buildAssetCard(asset);
-                    },
-                  ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: _filteredAssets.length,
+                        itemBuilder: (context, index) => _buildAssetCard(_filteredAssets[index]),
+                      ),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const AssetFormScreen()),
-          ).then((_) {
-            setState(() {});
-          });
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const AssetFormScreen())).then((_) => _loadAssets());
         },
         icon: const Icon(Icons.add),
         label: const Text('Tambah Aset'),
@@ -192,36 +190,21 @@ class _AssetListScreenState extends State<AssetListScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        asset.code,
-                        style: SWATheme.headingSmall.copyWith(
-                          color: SWATheme.primaryNavy,
-                        ),
-                      ),
+                      Text(asset.code, style: SWATheme.headingSmall.copyWith(color: SWATheme.primaryNavy)),
                       const SizedBox(height: 4),
-                      Text(
-                        asset.name,
-                        style: SWATheme.bodyMedium,
-                      ),
+                      Text(asset.name, style: SWATheme.bodyMedium),
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: _getConditionColor(asset.condition).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     asset.condition,
-                    style: TextStyle(
-                      color: _getConditionColor(asset.condition),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: TextStyle(color: _getConditionColor(asset.condition), fontSize: 12, fontWeight: FontWeight.w500),
                   ),
                 ),
               ],
@@ -235,9 +218,7 @@ class _AssetListScreenState extends State<AssetListScreen> {
                 const SizedBox(width: 16),
                 const Icon(Icons.location_on, size: 16, color: SWATheme.secondaryText),
                 const SizedBox(width: 4),
-                Expanded(
-                  child: Text(asset.location, style: SWATheme.bodySmall),
-                ),
+                Expanded(child: Text(asset.location, style: SWATheme.bodySmall)),
               ],
             ),
             const SizedBox(height: 8),
@@ -245,9 +226,7 @@ class _AssetListScreenState extends State<AssetListScreen> {
               children: [
                 const Icon(Icons.person, size: 16, color: SWATheme.secondaryText),
                 const SizedBox(width: 4),
-                Expanded(
-                  child: Text(asset.responsiblePerson, style: SWATheme.bodySmall),
-                ),
+                Expanded(child: Text(asset.responsiblePerson, style: SWATheme.bodySmall)),
               ],
             ),
             const SizedBox(height: 8),
@@ -268,14 +247,7 @@ class _AssetListScreenState extends State<AssetListScreen> {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => AssetDetailScreen(asset: asset),
-                    ),
-                  );
-                },
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AssetDetailScreen(asset: asset))),
                 child: const Text('Lihat Detail'),
               ),
             ),
